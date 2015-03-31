@@ -4,7 +4,7 @@ def main
   Sneakers.configure
   Sneakers.logger.level = Logger::INFO
   puts "publish: #{ARGV[0]}"
-  Sneakers::Publisher.new.publish(ARGV[0], host: 'localhost', to_queue: :logs)
+  Sneakers::Publisher.new.publish(ARGV[0], host: 'localhost', to_queue: :calc)
   puts 'done'
 end
 

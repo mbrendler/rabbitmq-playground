@@ -7,7 +7,7 @@ Sneakers.logger.level = Logger::INFO
 
 class Processor
   include Sneakers::Worker
-  from_queue :logs
+  from_queue :calc
 
   REDIS = Redis.new
 

@@ -5,7 +5,7 @@ def main
   connection = Bunny.new
   connection.start
   channel = connection.channel
-  queue = channel.queue('logs', durable: true, passive: true)
+  queue = channel.queue(:calc, durable: true, passive: true)
   pp queue.status # Only {message_count: ?, consumer_count: ?}
 end
 
