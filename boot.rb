@@ -2,7 +2,7 @@ require 'sneakers'
 require 'redis'
 require 'json'
 
-Sneakers.configure
+Sneakers.configure(prefetch: 1)
 Sneakers.logger.level = Logger::INFO
 
 class Processor
