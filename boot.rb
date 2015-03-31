@@ -14,6 +14,6 @@ class Processor
   def work(msg)
     err = JSON.parse(msg)
     REDIS.incr("processor:#{err['error']}") if err['type'] == 'error'
-    ack!
+    ack! # Tell RabbitMQ that the message is successfully handled.
   end
 end
