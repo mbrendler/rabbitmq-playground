@@ -11,9 +11,14 @@ class Processor
 
   REDIS = Redis.new
 
-  def work(msg)
-    err = JSON.parse(msg)
-    REDIS.incr("processor:#{err['error']}") if err['type'] == 'error'
+  def work(json_msg)
+    msg = JSON.parse(json_msg)
+    puts msg
+    REDIS.set(msg['id'], 'calculating')
+    puts 'calculating'
+    sleep 3
+    REDIS.set(msg['id'], 'calculated')
+    puts 'calculated'
     ack! # Tell RabbitMQ that the message is successfully handled.
   end
 end
