@@ -11,7 +11,7 @@ def main
   redis = Redis.new
   redis.set(id, 'pending')
 
-  Sneakers::Publisher.new.publish(ARGV[0], host: 'localhost', to_queue: :calc)
+  Sneakers::Publisher.new.publish(ARGV[0], to_queue: :calc)
   puts 'sent'
 
   status = redis.get(id)
