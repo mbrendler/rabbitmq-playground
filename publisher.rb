@@ -8,6 +8,7 @@ def main
   connection = Bunny.new
   connection.start
   channel = connection.create_channel
+  # durable ... the queue servives a restart of RabbitMQ
   queue = channel.queue('a_test_queue', durable: true)
   messages = ARGV.empty? ? [Time.now.iso8601] : ARGV
   messages.each do |message|
