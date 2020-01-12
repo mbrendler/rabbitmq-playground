@@ -2,6 +2,8 @@
 # frozen_string_literal: true
 
 require 'socket'
+require 'amq/protocol'
+require 'amq/protocol/frame'
 
 connect_host = '127.0.0.1'
 connect_port = 5672
@@ -10,12 +12,6 @@ listen_host = '127.0.0.1'
 listen_port = 4444
 
 class PrettyFrame
-  FRAME_TYPES = {
-    1 => :method,
-    2 => :content_header,
-    3 => :body
-  }.freeze
-
   def call(data)
     return if data.nil? || data.empty?
 
@@ -25,9 +21,28 @@ class PrettyFrame
       return
     end
     print_header(type, channel, size)
+    type_name = AMQ::Protocol::Frame::TYPES_REVERSE[type]
+    if type_name == :method
+      method_frame = AMQ::Protocol::MethodFrame.new(data[7...7 + size], nil)
+      puts("  #{method_frame.method_class.name}")
+      begin
+        payload = method_frame.decode_payload
+        payload.instance_variables.each do |ivar_name|
+          value = payload.instance_variable_get(ivar_name)
+          puts("  #{ivar_name.to_s[1..-1]}: #{value}")
+        end
+      rescue NoMethodError
+      end
+    elsif type_name == :headers
+      header_frame = AMQ::Protocol::HeaderFrame.new(data[7...7 + size], nil)
+      header_frame.properties.each do |name, value|
+        puts("  #{name}: #{value}")
+      end
+    end
     print_body(data[7...7 + size])
     raise 'End of Frame not found' if data[7 + size].ord != 0xCE
 
+    puts
     call(data[8 + size..-1])
   end
 
@@ -38,7 +53,8 @@ class PrettyFrame
   end
 
   def print_header(type, channel, size)
-    puts("channel(#{channel}) - #{FRAME_TYPES[type]}(#{type}) - size(#{size})")
+    type_name = AMQ::Protocol::Frame::TYPES_REVERSE[type]
+    puts("channel(#{channel}) - #{type_name}(#{type}) - size(#{size})")
   end
 
   def print_body(raw)
@@ -54,30 +70,34 @@ end
 
 s = TCPServer.new(listen_host, listen_port)
 
-while got = s.accept
+while (client_socket = s.accept)
   connect_socket = TCPSocket.new(connect_host, connect_port)
   puts('new connection')
   pretty_frame = PrettyFrame.new
   loop do
-    r = IO.select([got, connect_socket], nil, nil)[0]
+    r = IO.select([client_socket, connect_socket], nil, nil)[0]
 
-    if r.include?(got)
+    if r.include?(client_socket)
       w = IO.select(nil, [connect_socket], nil, 0)[1]
       if w == [connect_socket]
-        gotty = got.recv 1024
-        if gotty.empty?
+        data = client_socket.recv(1024)
+        if data.empty?
           connect_socket.close
+          client_socket.close
+          puts('connection closed')
           break
         end
-        pretty_frame.call(gotty)
-        connect_socket.write(gotty)
+        pretty_frame.call(data)
+        connect_socket.write(data)
       end
     end
 
     if r.include?(connect_socket)
-      w = IO.select(nil, [got], nil, 0)[1]
-      if w == [got]
-        got.write(connect_socket.recv(1024))
+      w = IO.select(nil, [client_socket], nil, 0)[1]
+      if w == [client_socket]
+        data = connect_socket.recv(1024)
+        pretty_frame.call(data)
+        client_socket.write(data)
       end
     end
   end
