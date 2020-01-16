@@ -11,13 +11,48 @@ connect_port = 5672
 listen_host = '127.0.0.1'
 listen_port = 4444
 
+module Tput
+  MAP = {
+    red: 'setaf 1',
+    yellow: 'setaf 3',
+    blue: 'setaf 4'
+  }.freeze
+
+  (%i[bold op sgr0] + MAP.keys).each do |name|
+    if $stdout.tty?
+      define_singleton_method(name) do
+        instance_variable_get("@#{name}") ||
+          instance_variable_set("@#{name}", `tput #{MAP.fetch(name, name)}`)
+      end
+    else
+      define_singleton_method(name) { '' }
+    end
+  end
+
+  def self.clean
+    "#{op}#{sgr0}"
+  end
+
+  def self.header
+    "#{yellow}#{bold}"
+  end
+
+  def self.connection
+    "#{red}#{bold}"
+  end
+
+  def self.method_name
+    blue
+  end
+end
+
 class PrettyFrame
   def call(data)
     return if data.nil? || data.empty?
 
     type, channel, size = parse_header(data)
     if type == 65
-      puts('unhandled frame')
+      puts("#{Tput.header}unhandled frame#{Tput.clean}")
       print_body(data)
       puts
       return
@@ -26,7 +61,7 @@ class PrettyFrame
     type_name = AMQ::Protocol::Frame::TYPES_REVERSE[type]
     if type_name == :method
       method_frame = AMQ::Protocol::MethodFrame.new(data[7...7 + size], nil)
-      puts("  #{method_frame.method_class.name}")
+      puts("  #{Tput.method_name}#{method_frame.method_class.name}#{Tput.clean}")
       begin
         payload = method_frame.decode_payload
         payload.instance_variables.each do |ivar_name|
@@ -64,7 +99,7 @@ class PrettyFrame
 
   def print_header(type, channel, size)
     type_name = AMQ::Protocol::Frame::TYPES_REVERSE[type]
-    puts("channel(#{channel}) - #{type_name}(#{type}) - size(#{size})")
+    puts("#{Tput.header}channel(#{channel}) - #{type_name}(#{type}) - size(#{size})#{Tput.clean}")
   end
 
   def print_body(raw)
@@ -82,7 +117,7 @@ s = TCPServer.new(listen_host, listen_port)
 
 while (client_socket = s.accept)
   connect_socket = TCPSocket.new(connect_host, connect_port)
-  puts('new connection')
+  puts("#{Tput.connection}new connection#{Tput.clean}\n")
   pretty_frame = PrettyFrame.new
   loop do
     r = IO.select([client_socket, connect_socket], nil, nil)[0]
@@ -94,7 +129,7 @@ while (client_socket = s.accept)
         if data.empty?
           connect_socket.close
           client_socket.close
-          puts('connection closed')
+          puts("#{Tput.connection}connection closed#{Tput.clean}\n")
           break
         end
         pretty_frame.call(data)
