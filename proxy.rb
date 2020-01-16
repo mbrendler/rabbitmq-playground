@@ -17,7 +17,9 @@ class PrettyFrame
 
     type, channel, size = parse_header(data)
     if type == 65
-      p(data)
+      puts('unhandled frame')
+      print_body(data)
+      puts
       return
     end
     print_header(type, channel, size)
@@ -29,7 +31,7 @@ class PrettyFrame
         payload = method_frame.decode_payload
         payload.instance_variables.each do |ivar_name|
           value = payload.instance_variable_get(ivar_name)
-          puts("  #{ivar_name.to_s[1..-1]}: #{value}")
+          puts("  #{ivar_name.to_s[1..-1]}: #{format_value(value)}")
         end
       rescue NoMethodError
       end
@@ -44,6 +46,14 @@ class PrettyFrame
 
     puts
     call(data[8 + size..-1])
+  end
+
+  def format_value(value, indent: 4)
+    return value unless value.is_a?(Hash)
+
+    value.map do |k, v|
+      "\n#{' ' * indent}#{k}: #{format_value(v, indent: indent + 2)}"
+    end.join
   end
 
   def parse_header(raw)
