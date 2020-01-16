@@ -7,14 +7,21 @@ require 'optparse'
 
 FROM_QUEUE_OPTION_DEFINITIONS = {
   exchange: String,
-  # exchange_type: :topic,
   routing_key: String,
   timeout_job_after: Integer
 }.freeze
 
+EXCHANGE_TYPES = %w[direct fanout topic header]
+
 def parse_options
   queue_name = 'a_test_queue'
-  from_options = { durable: true }
+  from_options = {
+    exchange: 'playground.a-exchange',
+    exchange_type: :topic,
+    exchange_options: { durable: false },
+    routing_key: 'playground.a-routing-key',
+    durable: true
+  }
   OptionParser.new do |opts|
     opts.banner = "Usage: #{$PROGRAM_NAME} [options]"
     opts.separator('')
@@ -22,6 +29,15 @@ def parse_options
     opts.on('--queue QUEUE', 'Use queue') { |value| queue_name = value }
     opts.on('--no-durable', 'Disable durable') do
       from_options[:durable] = false
+    end
+
+    opts.on('--exchange-durable', 'Make exchange durable') do
+      from_options[:exchange_options][:durable] = true
+    end
+    opts.on('--exchange-type TYPE', 'Use exchange type') do |v|
+      raise "unknown exchange type - '#{v}'" unless EXCHANGE_TYPES.include?(v)
+
+      from_options[:exchange_type] = v.to_sym
     end
 
     FROM_QUEUE_OPTION_DEFINITIONS.each do |name, type|
@@ -42,11 +58,7 @@ Sneakers.logger.level = Logger::INFO
 
 class Worker
   include Sneakers::Worker
-  from_queue(
-    QUEUE_NAME,
-    exchange_options: { durable: true },
-    **FROM_OPTIONS
-  )
+  from_queue(QUEUE_NAME, **FROM_OPTIONS)
 
   def work(msg)
     puts msg
