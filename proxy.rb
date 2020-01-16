@@ -14,8 +14,10 @@ listen_port = 4444
 module Tput
   MAP = {
     red: 'setaf 1',
+    green: 'setaf 2',
     yellow: 'setaf 3',
-    blue: 'setaf 4'
+    blue: 'setaf 4',
+    cyan: 'setaf 6'
   }.freeze
 
   (%i[bold op sgr0] + MAP.keys).each do |name|
@@ -38,18 +40,31 @@ module Tput
   end
 
   def self.connection
-    "#{red}#{bold}"
+    "#{cyan}#{bold}"
   end
 
   def self.method_name
     blue
   end
+
+  def self.from_rabbitmq
+    "#{red}#{bold}"
+  end
+
+  def self.from_client
+    "#{green}#{bold}"
+  end
 end
 
 class PrettyFrame
-  def call(data)
+  def call(data, from_rabbitmq)
     return if data.nil? || data.empty?
 
+    if from_rabbitmq
+      puts("#{Tput.from_rabbitmq}client <<<<<<<<<<<<<<<< RabbitMQ#{Tput.clean}")
+    else
+      puts("#{Tput.from_client}client >>>>>>>>>>>>>>>> RabbitMQ#{Tput.clean}")
+    end
     type, channel, size = parse_header(data)
     if type == 65
       puts("#{Tput.header}unhandled frame#{Tput.clean}")
@@ -80,7 +95,7 @@ class PrettyFrame
     raise 'End of Frame not found' if data[7 + size].ord != 0xCE
 
     puts
-    call(data[8 + size..-1])
+    call(data[8 + size..-1], from_rabbitmq)
   end
 
   def format_value(value, indent: 4)
@@ -132,7 +147,7 @@ while (client_socket = s.accept)
           puts("#{Tput.connection}connection closed#{Tput.clean}\n")
           break
         end
-        pretty_frame.call(data)
+        pretty_frame.call(data, false)
         connect_socket.write(data)
       end
     end
@@ -141,7 +156,7 @@ while (client_socket = s.accept)
       w = IO.select(nil, [client_socket], nil, 0)[1]
       if w == [client_socket]
         data = connect_socket.recv(1024)
-        pretty_frame.call(data)
+        pretty_frame.call(data, true)
         client_socket.write(data)
       end
     end
