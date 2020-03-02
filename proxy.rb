@@ -1,6 +1,7 @@
 #! /usr/bin/env ruby
 # frozen_string_literal: true
 
+require 'uri'
 require 'socket'
 require 'amq/protocol'
 require 'amq/protocol/frame'
@@ -85,6 +86,13 @@ class PrettyFrame
 end
 
 s = TCPServer.new(listen_host, listen_port)
+
+DEFAULT_RABBITMQ_URL = 'amqp://guest:guest@127.0.0.1:5672'
+uri = URI.parse(ENV.fetch('RABBITMQ_URL', DEFAULT_RABBITMQ_URL))
+uri.host = listen_host
+uri.port = listen_port
+
+puts("Connect to #{uri}")
 
 while (client_socket = s.accept)
   connect_socket = TCPSocket.new(connect_host, connect_port)
