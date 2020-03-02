@@ -4,65 +4,63 @@
 require 'sneakers'
 require 'sneakers/Runner'
 require 'optparse'
+require_relative 'config'
 
-FROM_QUEUE_OPTION_DEFINITIONS = {
-  exchange: String,
-  routing_key: String,
-  timeout_job_after: Integer
-}.freeze
+EXCHANGE_TYPES = %w[direct fanout topic header].freeze
 
-EXCHANGE_TYPES = %w[direct fanout topic header]
+OPTIONS =
+  Struct
+  .new(:queue, :from_queue_options)
+  .new(
+    QUEUE_NAME,
+    exchange: EXCHANGE,
+    exchange_type: EXCHANGE_TYPE,
+    exchange_options: EXCHANGE_OPTIONS,
+    routing_key: ROUTING_KEY,
+    durable: QUEUE_DURABLE
+  )
 
-def parse_options
-  queue_name = 'a_test_queue'
-  from_options = {
-    exchange: 'playground.a-exchange',
-    exchange_type: :topic,
-    exchange_options: { durable: false },
-    routing_key: 'playground.a-routing-key',
-    durable: true
-  }
-  OptionParser.new do |opts|
-    opts.banner = "Usage: #{$PROGRAM_NAME} [options]"
-    opts.separator('')
+OptionParser.new do |opts|
+  opts.banner = "Usage: #{$PROGRAM_NAME} [options]"
+  opts.separator('')
 
-    opts.on('--queue QUEUE', 'Use queue') { |value| queue_name = value }
-    opts.on('--no-durable', 'Disable durable') do
-      from_options[:durable] = false
-    end
+  opts.on('--exchange', 'Set exchange name') do |v|
+    OPTIONS.from_queue_options[:exchange] = v
+  end
+  opts.on('--exchange-durable', 'Make exchange durable') do
+    OPTIONS.from_queue_options[:exchange_options][:durable] = true
+  end
+  opts.on('--exchange-type TYPE', 'Use exchange type') do |v|
+    raise "unknown exchange type - '#{v}'" unless EXCHANGE_TYPES.include?(v)
 
-    opts.on('--exchange-durable', 'Make exchange durable') do
-      from_options[:exchange_options][:durable] = true
-    end
-    opts.on('--exchange-type TYPE', 'Use exchange type') do |v|
-      raise "unknown exchange type - '#{v}'" unless EXCHANGE_TYPES.include?(v)
+    OPTIONS.from_queue_options[:exchange_type] = v.to_sym
+  end
+  opts.separator('')
 
-      from_options[:exchange_type] = v.to_sym
-    end
+  opts.on('--routing-key', 'Set routing-key') do |v|
+    OPTIONS.from_queue_options[:routing_key] = v
+  end
+  opts.separator('')
 
-    FROM_QUEUE_OPTION_DEFINITIONS.each do |name, type|
-      opts.on(
-        "--#{name} #{name.to_s.upcase}", type, "Set #{name} (#{type})"
-      ) do |value|
-        from_options[name] = value
-      end
-    end
-  end.parse!
-  [queue_name, from_options]
-end
-
-QUEUE_NAME, FROM_OPTIONS = parse_options
+  opts.on('--queue QUEUE', 'Use queue') { |value| OPTIONS.queue = value }
+  opts.on('--no-durable', 'Disable durable') do
+    OPTIONS.from_queue_options[:durable] = false
+  end
+end.parse!
 
 Sneakers.configure(prefetch: 1)
 Sneakers.logger.level = Logger::INFO
 
 class Worker
   include Sneakers::Worker
-  from_queue(QUEUE_NAME, **FROM_OPTIONS)
+  from_queue(OPTIONS.queue, OPTIONS.from_queue_options)
 
-  def work(msg)
-    puts msg
-    ack! # Tell RabbitMQ that the message is successfully handled.
+  def work_with_params(msg, delivery_info, metadata)
+    puts("msg: #{msg.inspect}")
+    puts("delivery_info: #{delivery_info.inspect}")
+    puts("metadata: #{metadata.inspect}")
+    puts
+    ack!
   end
 end
 
