@@ -1,10 +1,12 @@
 #! /usr/bin/env ruby
 # frozen_string_literal: true
 
+require 'time'
 require 'sneakers'
 require 'sneakers/Runner'
 require 'optparse'
 require_relative 'config'
+require_relative 'tput'
 
 EXCHANGE_TYPES = %w[direct fanout topic header].freeze
 
@@ -56,11 +58,18 @@ class Worker
   from_queue(OPTIONS.queue, OPTIONS.from_queue_options)
 
   def work_with_params(msg, delivery_info, metadata)
-    puts("msg: #{msg.inspect}")
-    puts("delivery_info: #{delivery_info.inspect}")
-    puts("metadata: #{metadata.inspect}")
+    puts("#{Tput.header}New message#{Tput.clean} - #{Time.now.iso8601}")
+    print_data(:msg, msg)
+    print_data(:delivery_info, delivery_info)
+    print_data(:metadata, metadata)
     puts
     ack!
+  end
+
+  private
+
+  def print_data(name, data)
+    puts("#{Tput.blue}#{name}:#{Tput.clean} #{data.inspect}")
   end
 end
 
