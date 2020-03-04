@@ -7,11 +7,14 @@ require 'amq/protocol'
 require 'amq/protocol/frame'
 require_relative 'tput'
 
-connect_host = '127.0.0.1'
-connect_port = 5672
+RABBITMQ_URL = URI.parse(
+  ENV.fetch('RABBITMQ_URL', 'amqp://guest:guest@127.0.0.1:5672')
+)
 
-listen_host = '127.0.0.1'
-listen_port = 4444
+OPTIONS =
+  Struct
+  .new(:listen_host, :listen_port, :remote_host, :remote_port)
+  .new('127.0.0.1', 4444, RABBITMQ_URL.host, RABBITMQ_URL.port)
 
 class PrettyFrame
   def call(data, from_rabbitmq)
@@ -85,46 +88,81 @@ class PrettyFrame
   end
 end
 
-s = TCPServer.new(listen_host, listen_port)
-
-DEFAULT_RABBITMQ_URL = 'amqp://guest:guest@127.0.0.1:5672'
-uri = URI.parse(ENV.fetch('RABBITMQ_URL', DEFAULT_RABBITMQ_URL))
-uri.host = listen_host
-uri.port = listen_port
-
-puts("Connect to #{uri}")
-
-while (client_socket = s.accept)
-  connect_socket = TCPSocket.new(connect_host, connect_port)
-  puts("#{Tput.connection}new connection#{Tput.clean}\n")
-  pretty_frame = PrettyFrame.new
-  loop do
-    r = IO.select([client_socket, connect_socket], nil, nil)[0]
-
-    if r.include?(client_socket)
-      w = IO.select(nil, [connect_socket], nil, 0)[1]
-      if w == [connect_socket]
-        data = client_socket.recv(1024)
-        if data.empty?
-          connect_socket.close
-          client_socket.close
-          puts("#{Tput.connection}connection closed#{Tput.clean}\n")
-          break
-        end
-        pretty_frame.call(data, false)
-        connect_socket.write(data)
-      end
+class Proxy
+  def self.run(listen_host, listen_port, remote_host, remote_port)
+    listen_socket = TCPServer.new(listen_host, listen_port)
+    puts("Connect to RABBITMQ_URL=#{listen_uri(listen_host, listen_port)}")
+    while (client_socket = listen_socket.accept)
+      remote_socket = TCPSocket.new(remote_host, remote_port)
+      puts("#{Tput.connection}new connection#{Tput.clean}\n")
+      new(client_socket, remote_socket, PrettyFrame.new).run
     end
+  ensure
+    listen_socket&.close
+  end
 
-    if r.include?(connect_socket)
-      w = IO.select(nil, [client_socket], nil, 0)[1]
-      if w == [client_socket]
-        data = connect_socket.recv(1024)
-        pretty_frame.call(data, true)
-        client_socket.write(data)
-      end
+  def self.listen_uri(listen_host, listen_port)
+    RABBITMQ_URL.dup.tap do |uri|
+      uri.host = listen_host
+      uri.port = listen_port
     end
+  end
+
+  def initialize(client_socket, remote_socket, pretty_frame)
+    @client_socket = client_socket
+    @remote_socket = remote_socket
+    @pretty_frame = pretty_frame
+    @terminated = false
+  end
+
+  def run
+    until @terminated
+      r = IO.select([@client_socket, @remote_socket], nil, nil)[0]
+      handle_client_recv if r.include?(@client_socket)
+      break if @terminated
+
+      handle_remote_recv if r.include?(@remote_socket)
+    end
+  ensure
+    @client_socket.close
+    @remote_socket.close
+    puts("#{Tput.connection}connection closed#{Tput.clean}\n")
+  end
+
+  private
+
+  def handle_client_recv
+    return unless socket_writable?(@remote_socket)
+
+    data = @client_socket.recv(1024)
+    if data.empty?
+      @terminated = true
+      return
+    end
+    @pretty_frame.call(data, false)
+    @remote_socket.write(data)
+  end
+
+  def handle_remote_recv
+    return unless socket_writable?(@client_socket)
+
+    data = @remote_socket.recv(1024)
+    @pretty_frame.call(data, true)
+    @client_socket.write(data)
+  end
+
+  def socket_writable?(socket)
+    IO.select(nil, [socket], nil, 0)[1] == [socket]
   end
 end
 
-s.close
+def main
+  Proxy.run(
+    OPTIONS.listen_host,
+    OPTIONS.listen_port,
+    OPTIONS.remote_host,
+    OPTIONS.remote_port
+  )
+end
+
+main if $PROGRAM_NAME == __FILE__
