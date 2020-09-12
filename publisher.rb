@@ -23,13 +23,16 @@ end
 
 OPTIONS =
   Struct
-  .new(:exchange, :message_properties)
-  .new(EXCHANGE, routing_key: ROUTING_KEY)
+  .new(:exchange, :exchange_options, :message_properties)
+  .new(EXCHANGE, EXCHANGE_OPTIONS.dup, routing_key: ROUTING_KEY)
 
 OptionParser.new do |opts|
   opts.banner = "Usage: #{$PROGRAM_NAME} [options] MESSAGE..."
   opts.separator('')
   opts.on('--exchange NAME', 'Use exchange') { |v| OPTIONS.exchange = v }
+  opts.on('--exchange-durable', 'Make exchange durable') do
+    OPTIONS.exchange_options[:durable] = true
+  end
 
   opts.separator('')
   opts.on('--routing-key KEY', 'Set routing key') do |v|
@@ -50,7 +53,7 @@ def main
   connection = Bunny.new
   connection.start
   channel = connection.create_channel
-  exchange = channel.topic(OPTIONS.exchange)
+  exchange = channel.topic(OPTIONS.exchange, OPTIONS.exchange_options)
   messages = ARGV.empty? ? [Time.now.iso8601] : ARGV
   messages.each do |message|
     puts "publish: #{message}"
