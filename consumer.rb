@@ -17,7 +17,7 @@ OPTIONS =
     QUEUE_NAME,
     exchange: EXCHANGE,
     exchange_type: EXCHANGE_TYPE,
-    exchange_options: EXCHANGE_OPTIONS,
+    exchange_options: EXCHANGE_OPTIONS.dup,
     routing_key: ROUTING_KEY,
     durable: QUEUE_DURABLE
   )
