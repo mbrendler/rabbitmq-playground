@@ -135,7 +135,7 @@ class Proxy
     return unless socket_writable?(@remote_socket)
 
     data = @client_socket.recv(1024)
-    if data.empty?
+    if data.nil? || data.empty?
       @terminated = true
       return
     end
