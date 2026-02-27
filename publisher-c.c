@@ -1,4 +1,5 @@
-// cc -Wall -Wextra -Wpedantic -I/opt/homebrew/include -L/opt/homebrew/lib -lrabbitmq -o publisher-c publisher-c.c
+// cc -Wall -Wextra -Wpedantic -I/opt/homebrew/include -L/opt/homebrew/lib
+// -lrabbitmq -o publisher-c publisher-c.c
 
 #include <rabbitmq-c/amqp.h>
 #include <rabbitmq-c/tcp_socket.h>
