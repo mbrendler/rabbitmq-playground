@@ -1,37 +1,31 @@
 # RabbitMQ playground
 
-* Install dependencies
+```
+docker compose up rabbitmq
+```
+
+* Ruby
 
 ```
 bundle install
-```
-
-* Start consumer
-
-```
 ./consumer.rb
-```
-
-* Publish message
-
-```
 ./publisher.rb 'a message' 'another message'
+./status queue_name  # show queue status
+./proxy.rb  # rabbitmq proxy to prints communication data
 ```
 
-* Show queue status
+* C / C++
 
 ```
-./status queue_name
+brew install rabbitmq-c
+
+cc -Wall -Wextra -Wpedantic -I/opt/homebrew/include -L/opt/homebrew/lib -lrabbitmq -o publisher-c publisher-c.c
+./publisher-c
+
+
+c++ -Wall -Wextra -Wpedantic -DCHECK_PUBLISHER_CONFIRM=1 -I/opt/homebrew/include -L/opt/homebrew/lib -lrabbitmq -o publisher-c++ publisher-c++.cpp
+./publisher-c++
 ```
-
-
-## Interesting Meta Keys:
-
-* :message_id
-* :reply_to
-* :correlation
-* :timestamp
-* :arguments
 
 
 Links:
@@ -39,3 +33,5 @@ Links:
 * http://rubybunny.info/articles/queues.html
 * http://rubybunny.info/articles/durability.html
 * http://rubybunny.info/articles/exchanges.html
+* https://github.com/alanxz/rabbitmq-c
+* https://alanxz.github.io/rabbitmq-c/docs/0.8.0/
