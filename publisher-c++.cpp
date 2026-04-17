@@ -69,30 +69,51 @@ public:
     amqp_bytes_t message_bytes = amqp_cstring_bytes(message);
     amqp_bytes_t routing_key_bytes = amqp_cstring_bytes(routing_key);
     amqp_bytes_t exchange_bytes = amqp_cstring_bytes(exchange);
+#ifdef CHECK_PUBLISHER_CONFIRM
+    const int mandatory = 1;
+#else
+    const int mandatory = 0;
+#endif
     const int rc =
-        amqp_basic_publish(m_conn, 1, exchange_bytes, routing_key_bytes, 1, 0,
-                           NULL, message_bytes);
+        amqp_basic_publish(m_conn, 1, exchange_bytes, routing_key_bytes,
+                           mandatory, 0, NULL, message_bytes);
     if (rc != AMQP_STATUS_OK) {
       teardown();
       return std::string("Publishing message: ") + amqp_error_string2(rc);
     }
 #ifdef CHECK_PUBLISHER_CONFIRM
-    amqp_rpc_reply_t reply = amqp_get_rpc_reply(m_conn);
-    const std::string confirm_err = rpc_error("Waiting for publisher confirm", reply);
-    if (!confirm_err.empty()) {
-      teardown();
-      return confirm_err;
-    }
-
+    bool returned = false;
     amqp_frame_t frame;
-    amqp_simple_wait_frame(m_conn, &frame);
-    if (frame.frame_type == AMQP_FRAME_METHOD) {
+    for (;;) {
+      if (amqp_simple_wait_frame(m_conn, &frame) != AMQP_STATUS_OK) {
+        teardown();
+        return "Waiting for publisher confirm: frame error";
+      }
+      if (frame.frame_type != AMQP_FRAME_METHOD) continue;
+      if (frame.payload.method.id == AMQP_BASIC_ACK_METHOD) break;
       if (frame.payload.method.id == AMQP_BASIC_NACK_METHOD) {
         return "Message was nack'd by the broker";
-      } else if (frame.payload.method.id == AMQP_CHANNEL_CLOSE_METHOD) {
+      }
+      if (frame.payload.method.id == AMQP_BASIC_RETURN_METHOD) {
+        returned = true;
+        amqp_simple_wait_frame(m_conn, &frame); // content header
+        if (frame.frame_type == AMQP_FRAME_HEADER) {
+          uint64_t remaining = frame.payload.properties.body_size;
+          while (remaining > 0) {
+            amqp_simple_wait_frame(m_conn, &frame); // body chunk
+            if (frame.frame_type == AMQP_FRAME_BODY)
+              remaining -= frame.payload.body_fragment.len;
+          }
+        }
+        continue; // ack still follows
+      }
+      if (frame.payload.method.id == AMQP_CHANNEL_CLOSE_METHOD) {
         teardown();
         return "Channel was closed by the broker";
       }
+    }
+    if (returned) {
+      return "Message was returned: unroutable";
     }
 #endif
 
@@ -168,6 +189,15 @@ private:
 #endif
   }
 
+  void reconnect() {
+    if (m_conn) {
+      amqp_destroy_connection(m_conn);
+      m_conn = nullptr;
+    }
+    m_error.clear();
+    connect();
+  }
+
   void teardown() {
     amqp_destroy_connection(m_conn);
     m_conn = nullptr;
@@ -235,6 +265,8 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "%s\n", error.c_str());
     return 1;
   }
+
+  getchar();
 
   return 0;
 }
