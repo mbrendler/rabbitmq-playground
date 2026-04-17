@@ -10,8 +10,7 @@
 
 class RmqPublisher {
 public:
-  RmqPublisher(const char *url, const char *exchange)
-      : m_url(strdup(url)), m_exchange(exchange) {
+  explicit RmqPublisher(const char *url) : m_url(strdup(url)) {
     amqp_default_connection_info(&m_conn_info);
     if (!m_url) {
       m_error = "allocating URL string";
@@ -42,14 +41,35 @@ public:
     amqp_destroy_connection(m_conn);
   }
 
-  std::string publish(const char *message, const char *routing_key) {
+  std::string create_exchange(const char *exchange) {
+    if (!m_conn) {
+      return m_error;
+    }
+
+    amqp_exchange_declare(m_conn, 1, amqp_cstring_bytes(exchange),
+                          amqp_cstring_bytes("topic"),
+                          /*passive=*/0,
+                          /*durable=*/1,
+                          /*auto_delete=*/0,
+                          /*internal=*/0, amqp_empty_table);
+    amqp_rpc_reply_t reply = amqp_get_rpc_reply(m_conn);
+    if (reply.reply_type != AMQP_RESPONSE_NORMAL) {
+      return std::string("Declaring exchange: ") +
+             amqp_error_string2(reply.library_error);
+    }
+
+    return "";
+  }
+
+  std::string publish(const char *message, const char *routing_key,
+                      const char *exchange) {
     if (!m_conn) {
       return m_error;
     }
 
     amqp_bytes_t message_bytes = amqp_cstring_bytes(message);
     amqp_bytes_t routing_key_bytes = amqp_cstring_bytes(routing_key);
-    amqp_bytes_t exchange_bytes = amqp_cstring_bytes(m_exchange.c_str());
+    amqp_bytes_t exchange_bytes = amqp_cstring_bytes(exchange);
     const int rc =
         amqp_basic_publish(m_conn, 1, exchange_bytes, routing_key_bytes, 1, 0,
                            NULL, message_bytes);
@@ -152,13 +172,12 @@ private:
   std::string m_error;
   char *m_url = nullptr;
   amqp_connection_info m_conn_info;
-  std::string m_exchange;
   amqp_connection_state_t m_conn = nullptr;
 };
 
 int main(int argc, char *argv[]) {
-  // RmqPublisher publisher("amqps://127.0.0.1:2345", "playground.a-exchange");
-  RmqPublisher publisher("amqp://127.0.0.1:4444", "playground.a-exchange");
+  // RmqPublisher publisher("amqps://127.0.0.1:2345");
+  RmqPublisher publisher("amqp://127.0.0.1:4444");
   if (publisher.error().size() > 0) {
     fprintf(stderr, "%s\n", publisher.error().c_str());
     return 1;
@@ -169,8 +188,14 @@ int main(int argc, char *argv[]) {
     message = argv[1];
   }
 
-  const std::string error =
-      publisher.publish(message, "playground.a-routing-key");
+  std::string error = publisher.create_exchange("playground.a-exchange");
+  if (error.size() > 0) {
+    fprintf(stderr, "%s\n", error.c_str());
+    return 1;
+  }
+
+  error = publisher.publish(message, "playground.a-routing-key",
+                            "playground.a-exchange");
   if (error.size() > 0) {
     fprintf(stderr, "%s\n", error.c_str());
     return 1;
