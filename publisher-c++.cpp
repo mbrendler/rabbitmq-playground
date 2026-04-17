@@ -32,9 +32,6 @@ public:
   RmqPublisher &operator=(RmqPublisher &&) = delete;
   ~RmqPublisher() {
     free(m_url);
-    // if (m_conn_info.ssl) {
-    //   amqp_uninitialize_ssl_library();
-    // }
     if (!m_conn) {
       return;
     }
@@ -44,6 +41,9 @@ public:
   }
 
   std::string create_exchange(const char *exchange) {
+    if (!exchange) {
+      return "create_exchange: exchange is null";
+    }
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_conn) {
       return m_error;
@@ -66,6 +66,9 @@ public:
 
   std::string publish(const char *message, const char *routing_key,
                       const char *exchange) {
+    if (!message || !routing_key || !exchange) {
+      return "publish: message, routing_key, and exchange must be non-null";
+    }
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_conn) {
       return m_error;
@@ -161,6 +164,7 @@ private:
       m_conn = nullptr;
       return;
     }
+    // TODO: Remove in production environment
     if (m_conn_info.ssl) {
       amqp_ssl_socket_set_verify_peer(socket, 0);
       amqp_ssl_socket_set_verify_hostname(socket, 0);
@@ -213,14 +217,14 @@ private:
 #endif
   }
 
-  void reconnect() {
-    if (m_conn) {
-      amqp_destroy_connection(m_conn);
-      m_conn = nullptr;
-    }
-    m_error.clear();
-    connect();
-  }
+  // void reconnect() {
+  //   if (m_conn) {
+  //     amqp_destroy_connection(m_conn);
+  //     m_conn = nullptr;
+  //   }
+  //   m_error.clear();
+  //   connect();
+  // }
 
   void teardown() {
     amqp_destroy_connection(m_conn);
