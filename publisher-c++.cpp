@@ -176,8 +176,12 @@ private:
 };
 
 int main(int argc, char *argv[]) {
-  // RmqPublisher publisher("amqps://127.0.0.1:2345");
-  RmqPublisher publisher("amqp://127.0.0.1:4444");
+  const char *url = getenv("RABBITMQ_URL");
+  if (!url) {
+    url = "amqp://127.0.0.1:5672";
+  }
+
+  RmqPublisher publisher(url);
   if (publisher.error().size() > 0) {
     fprintf(stderr, "%s\n", publisher.error().c_str());
     return 1;
