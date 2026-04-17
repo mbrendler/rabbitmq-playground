@@ -4,6 +4,7 @@
 #include <rabbitmq-c/amqp.h>
 #include <rabbitmq-c/ssl_socket.h>
 #include <rabbitmq-c/tcp_socket.h>
+#include <mutex>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
@@ -42,6 +43,7 @@ public:
   }
 
   std::string create_exchange(const char *exchange) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_conn) {
       return m_error;
     }
@@ -63,6 +65,7 @@ public:
 
   std::string publish(const char *message, const char *routing_key,
                       const char *exchange) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_conn) {
       return m_error;
     }
@@ -232,6 +235,8 @@ private:
     return std::string(context) + ": unexpected reply_type";
   }
 
+  // Using a mutex is enough for now.  With more traffic on the publisher, we should implement a better approach (connection pool or thread with queue).
+  std::mutex m_mutex;
   std::string m_error;
   char *m_url = nullptr;
   amqp_connection_info m_conn_info;
