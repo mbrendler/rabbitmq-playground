@@ -53,12 +53,7 @@ public:
                           /*auto_delete=*/0,
                           /*internal=*/0, amqp_empty_table);
     amqp_rpc_reply_t reply = amqp_get_rpc_reply(m_conn);
-    if (reply.reply_type != AMQP_RESPONSE_NORMAL) {
-      return std::string("Declaring exchange: ") +
-             amqp_error_string2(reply.library_error);
-    }
-
-    return "";
+    return rpc_error("Declaring exchange", reply);
   }
 
   std::string publish(const char *message, const char *routing_key,
@@ -78,9 +73,9 @@ public:
     }
 #ifdef CHECK_PUBLISHER_CONFIRM
     amqp_rpc_reply_t reply = amqp_get_rpc_reply(m_conn);
-    if (reply.reply_type != AMQP_RESPONSE_NORMAL) {
-      return std::string("Waiting for publisher confirm: ") +
-             amqp_error_string2(reply.library_error);
+    const std::string confirm_err = rpc_error("Waiting for publisher confirm", reply);
+    if (!confirm_err.empty()) {
+      return confirm_err;
     }
 
     amqp_frame_t frame;
@@ -135,9 +130,8 @@ private:
     amqp_rpc_reply_t ret = amqp_login(m_conn, m_conn_info.vhost, 0, 131072, 0,
                                       AMQP_SASL_METHOD_PLAIN, m_conn_info.user,
                                       m_conn_info.password);
-    if (ret.reply_type != AMQP_RESPONSE_NORMAL) {
-      m_error =
-          "Logging in: " + std::string(amqp_error_string2(ret.library_error));
+    m_error = rpc_error("Logging in", ret);
+    if (!m_error.empty()) {
       amqp_connection_close(m_conn, AMQP_REPLY_SUCCESS);
       amqp_destroy_connection(m_conn);
       m_conn = nullptr;
@@ -146,9 +140,8 @@ private:
 
     amqp_channel_open(m_conn, 1);
     ret = amqp_get_rpc_reply(m_conn);
-    if (ret.reply_type != AMQP_RESPONSE_NORMAL) {
-      m_error =
-          "Open channel: " + std::string(amqp_error_string2(ret.library_error));
+    m_error = rpc_error("Open channel", ret);
+    if (!m_error.empty()) {
       amqp_connection_close(m_conn, AMQP_REPLY_SUCCESS);
       amqp_destroy_connection(m_conn);
       m_conn = nullptr;
@@ -158,15 +151,41 @@ private:
 #ifdef CHECK_PUBLISHER_CONFIRM
     amqp_confirm_select(m_conn, 1);
     amqp_rpc_reply_t reply = amqp_get_rpc_reply(m_conn);
-    if (reply.reply_type != AMQP_RESPONSE_NORMAL) {
-      m_error = "Enabling publisher confirms: " +
-                std::string(amqp_error_string2(reply.library_error));
+    m_error = rpc_error("Enabling publisher confirms", reply);
+    if (!m_error.empty()) {
       amqp_connection_close(m_conn, AMQP_REPLY_SUCCESS);
       amqp_destroy_connection(m_conn);
       m_conn = nullptr;
       return;
     }
 #endif
+  }
+
+  static std::string rpc_error(const char *context, amqp_rpc_reply_t reply) {
+    switch (reply.reply_type) {
+    case AMQP_RESPONSE_NORMAL:
+      return "";
+    case AMQP_RESPONSE_NONE:
+      return std::string(context) + ": no reply from broker (connection lost?)";
+    case AMQP_RESPONSE_LIBRARY_EXCEPTION:
+      return std::string(context) + ": " + amqp_error_string2(reply.library_error);
+    case AMQP_RESPONSE_SERVER_EXCEPTION:
+      if (reply.reply.id == AMQP_CHANNEL_CLOSE_METHOD) {
+        const auto *m = static_cast<amqp_channel_close_t *>(reply.reply.decoded);
+        return std::string(context) + ": server channel error " +
+               std::to_string(m->reply_code) + " " +
+               std::string(static_cast<char *>(m->reply_text.bytes), m->reply_text.len);
+      }
+      if (reply.reply.id == AMQP_CONNECTION_CLOSE_METHOD) {
+        const auto *m = static_cast<amqp_connection_close_t *>(reply.reply.decoded);
+        return std::string(context) + ": server connection error " +
+               std::to_string(m->reply_code) + " " +
+               std::string(static_cast<char *>(m->reply_text.bytes), m->reply_text.len);
+      }
+      return std::string(context) + ": server exception (method 0x" +
+             std::to_string(reply.reply.id) + ")";
+    }
+    return std::string(context) + ": unexpected reply_type";
   }
 
   std::string m_error;
