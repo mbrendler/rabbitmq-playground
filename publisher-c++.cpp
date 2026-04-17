@@ -160,7 +160,10 @@ private:
       return;
     }
 
-    amqp_rpc_reply_t ret = amqp_login(m_conn, m_conn_info.vhost, 0, 131072, 0,
+    // Heartbeat (5th arg) only flows while a rabbitmq-c API call is running;
+    // on an idle connection a caller must periodically invoke something like
+    // amqp_simple_wait_frame_noblock to keep it alive / detect drops.
+    amqp_rpc_reply_t ret = amqp_login(m_conn, m_conn_info.vhost, 0, 131072, 60,
                                       AMQP_SASL_METHOD_PLAIN, m_conn_info.user,
                                       m_conn_info.password);
     m_error = rpc_error("Logging in", ret);
