@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
+#include <sys/time.h>
 
 class RmqPublisher {
 public:
@@ -87,13 +88,24 @@ public:
       return std::string("Publishing message: ") + amqp_error_string2(rc);
     }
 #ifdef CHECK_PUBLISHER_CONFIRM
-    bool returned = false;
+    const struct timeval confirm_timeout = {5, 0};
     amqp_frame_t frame;
-    for (;;) {
-      if (amqp_simple_wait_frame(m_conn, &frame) != AMQP_STATUS_OK) {
+    // amqp_simple_wait_frame_noblock decrements the timeout in-place, so
+    // reset it per call.
+    auto wait_frame = [&](const char *context) -> std::string {
+      struct timeval t = confirm_timeout;
+      int rc = amqp_simple_wait_frame_noblock(m_conn, &frame, &t);
+      if (rc != AMQP_STATUS_OK) {
         teardown();
-        return "Waiting for publisher confirm: frame error";
+        return std::string(context) + ": " + amqp_error_string2(rc);
       }
+      return "";
+    };
+
+    bool returned = false;
+    for (;;) {
+      std::string err = wait_frame("Waiting for publisher confirm");
+      if (!err.empty()) return err;
       if (frame.frame_type != AMQP_FRAME_METHOD) continue;
       if (frame.payload.method.id == AMQP_BASIC_ACK_METHOD) break;
       if (frame.payload.method.id == AMQP_BASIC_NACK_METHOD) {
@@ -101,11 +113,13 @@ public:
       }
       if (frame.payload.method.id == AMQP_BASIC_RETURN_METHOD) {
         returned = true;
-        amqp_simple_wait_frame(m_conn, &frame); // content header
+        err = wait_frame("Draining basic.return header");
+        if (!err.empty()) return err;
         if (frame.frame_type == AMQP_FRAME_HEADER) {
           uint64_t remaining = frame.payload.properties.body_size;
           while (remaining > 0) {
-            amqp_simple_wait_frame(m_conn, &frame); // body chunk
+            err = wait_frame("Draining basic.return body");
+            if (!err.empty()) return err;
             if (frame.frame_type == AMQP_FRAME_BODY)
               remaining -= frame.payload.body_fragment.len;
           }
@@ -152,9 +166,11 @@ private:
       amqp_ssl_socket_set_verify_hostname(socket, 0);
     }
 
-    const int rc = amqp_socket_open(socket, m_conn_info.host, m_conn_info.port);
+    struct timeval connect_timeout = {5, 0};
+    const int rc = amqp_socket_open_noblock(socket, m_conn_info.host,
+                                            m_conn_info.port, &connect_timeout);
     if (rc != AMQP_STATUS_OK) {
-      m_error = "opening TCP socket";
+      m_error = std::string("opening TCP socket: ") + amqp_error_string2(rc);
       amqp_destroy_connection(m_conn);
       m_conn = nullptr;
       return;
