@@ -45,6 +45,7 @@ public:
     if (!m_conn) {
       return m_error;
     }
+    amqp_maybe_release_buffers(m_conn);
 
     amqp_exchange_declare(m_conn, 1, amqp_cstring_bytes(exchange),
                           amqp_cstring_bytes("topic"),
@@ -65,6 +66,7 @@ public:
     if (!m_conn) {
       return m_error;
     }
+    amqp_maybe_release_buffers(m_conn);
 
     amqp_bytes_t message_bytes = amqp_cstring_bytes(message);
     amqp_bytes_t routing_key_bytes = amqp_cstring_bytes(routing_key);
