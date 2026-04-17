@@ -53,7 +53,11 @@ public:
                           /*auto_delete=*/0,
                           /*internal=*/0, amqp_empty_table);
     amqp_rpc_reply_t reply = amqp_get_rpc_reply(m_conn);
-    return rpc_error("Declaring exchange", reply);
+    const std::string err = rpc_error("Declaring exchange", reply);
+    if (!err.empty()) {
+      teardown();
+    }
+    return err;
   }
 
   std::string publish(const char *message, const char *routing_key,
@@ -69,12 +73,14 @@ public:
         amqp_basic_publish(m_conn, 1, exchange_bytes, routing_key_bytes, 1, 0,
                            NULL, message_bytes);
     if (rc != AMQP_STATUS_OK) {
+      teardown();
       return std::string("Publishing message: ") + amqp_error_string2(rc);
     }
 #ifdef CHECK_PUBLISHER_CONFIRM
     amqp_rpc_reply_t reply = amqp_get_rpc_reply(m_conn);
     const std::string confirm_err = rpc_error("Waiting for publisher confirm", reply);
     if (!confirm_err.empty()) {
+      teardown();
       return confirm_err;
     }
 
@@ -84,6 +90,7 @@ public:
       if (frame.payload.method.id == AMQP_BASIC_NACK_METHOD) {
         return "Message was nack'd by the broker";
       } else if (frame.payload.method.id == AMQP_CHANNEL_CLOSE_METHOD) {
+        teardown();
         return "Channel was closed by the broker";
       }
     }
@@ -159,6 +166,11 @@ private:
       return;
     }
 #endif
+  }
+
+  void teardown() {
+    amqp_destroy_connection(m_conn);
+    m_conn = nullptr;
   }
 
   static std::string rpc_error(const char *context, amqp_rpc_reply_t reply) {
