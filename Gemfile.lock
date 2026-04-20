@@ -15,7 +15,7 @@ GEM
       rake (~> 12.3)
       serverengine (~> 2.1.0)
       thor
-    thor (1.0.1)
+    thor (1.4.0)
 
 PLATFORMS
   ruby
